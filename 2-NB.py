@@ -9,7 +9,6 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import seaborn as sns
 
-# === 设置 Food Control 合规样式 ===
 plt.rcParams.update({
     'font.family': 'Times New Roman',
     'font.size': 8,
@@ -22,8 +21,7 @@ plt.rcParams.update({
     'axes.linewidth': 0.5
 })
 
-# --- 1. 加载数据 ---
-df = pd.read_excel('产地-元素-光谱.xlsx', header=0)
+df = pd.read_excel('Origin–Element–Spectrum.xlsx', header=0)
 X = df.iloc[:, 1:].values
 y_series = df.iloc[:, 0]
 
@@ -34,42 +32,37 @@ except Exception:
     y = y_series.values
     target_names = ["Unknown"]
 
-print(f"原始数据形状: {X.shape}")
-print(f"目标类别: {target_names}")
+print(f"Shape of the raw data: {X.shape}")
+print(f"Target class: {target_names}")
 
-# --- 2. 特征分组 ---
-X_group1 = X[:, :11]   # 元素 (11 columns)
-X_group2 = X[:, 11:]   # 光谱 (rest)
+X_group1 = X[:, :11]
+X_group2 = X[:, 11:]
 
-# --- 3. 标准化 ---
 scaler1 = MinMaxScaler()
 scaler2 = StandardScaler()
 X_group1_scaled = scaler1.fit_transform(X_group1)
 X_group2_scaled = scaler2.fit_transform(X_group2)
 
-# --- 4. 自动PCA至累积方差≥95% ---
 def get_pca_components(X, min_variance=0.95):
     pca = PCA()
     pca.fit(X)
     cumsum_ratio = np.cumsum(pca.explained_variance_ratio_)
     n_components = np.argmax(cumsum_ratio >= min_variance) + 1
     n_components = max(1, n_components)
-    print(f"  目标方差: {min_variance:.0%}, 实际保留: {cumsum_ratio[n_components-1]:.4f} ({n_components} components)")
+    print(f"  Target variance: {min_variance:.0%}, Actually retained: {cumsum_ratio[n_components-1]:.4f} ({n_components} components)")
     pca_final = PCA(n_components=n_components)
     X_pca = pca_final.fit_transform(X)
     return X_pca, pca_final
 
-print("\n--- Group 1 (元素) PCA ---")
+print("\n--- Group 1 PCA ---")
 X_group1_pca, pca_group1 = get_pca_components(X_group1_scaled, min_variance=0.95)
 
-print("\n--- Group 2 (光谱) PCA ---")
+print("\n--- Group 2 PCA ---")
 X_group2_pca, pca_group2 = get_pca_components(X_group2_scaled, min_variance=0.95)
 
-# 融合特征
 X_pca_combined = np.hstack([X_group1_pca, X_group2_pca])
-print(f"\n融合后总维度: {X_pca_combined.shape[1]} (元素:{X_group1_pca.shape[1]} + 光谱:{X_group2_pca.shape[1]})")
+print(f"\nTotal dimensionality after fusion: {X_pca_combined.shape[1]} (Elements:{X_group1_pca.shape[1]} + Spectra:{X_group2_pca.shape[1]})")
 
-# --- 5. 3D 可视化（仅当维度≥3）---
 if X_pca_combined.shape[1] >= 3:
     fig_width_inch = 17.6 / 2.54
     fig_height_inch = 12.0 / 2.54
@@ -105,11 +98,11 @@ if X_pca_combined.shape[1] >= 3:
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     zlim = ax.get_zlim()
-    ax.text(xlim[1], ylim[0] + 0.05, zlim[1] + 0.05, '(a)',  # x最小, y最大, z最大 = 左上角
+    ax.text(xlim[1], ylim[0] + 0.05, zlim[1] + 0.05, '(a)',
             verticalalignment='top', horizontalalignment='left',
             fontsize=8, fontweight='bold')
 
-    plt.tight_layout(pad=2.0)  # 为 3D 图留更多边距
+    plt.tight_layout(pad=2.0)
 
     output_png = "Fused_Features_3D_PCA_95var.png"
     plt.savefig(
@@ -122,10 +115,7 @@ if X_pca_combined.shape[1] >= 3:
         facecolor='white'
     )
     plt.show()
-else:
-    print("融合后维度 < 3，跳过3D可视化")
 
-# --- 6. 朴素贝叶斯建模 ---
 X_train_pca, X_test_pca, y_train, y_test = train_test_split(
     X_pca_combined, y, test_size=0.3, stratify=y, random_state=42
 )
@@ -137,11 +127,10 @@ y_pred = nb_model.predict(X_test_pca)
 train_acc = nb_model.score(X_train_pca, y_train)
 test_acc = nb_model.score(X_test_pca, y_test)
 
-print(f"\n--- 模型性能 (PCA空间) ---")
-print(f"训练集准确率: {train_acc:.4f}")
-print(f"测试集准确率: {test_acc:.4f}")
+print(f"\n--- Model Performance in PCA Space ---")
+print(f"Training accuracy: {train_acc:.4f}")
+print(f"Test accuracy: {test_acc:.4f}")
 
-# --- 7. 混淆矩阵 (PDF) ---
 cm = confusion_matrix(y_test, y_pred)
 fig_width_inch = 17.6 / 2.54
 fig_height_inch = 12.0 / 2.54
@@ -166,17 +155,14 @@ plt.savefig(
 )
 plt.show()
 
-# --- 8. 分类报告 ---
-print(f"\n--- 分类报告 ---")
+print(f"\n--- Classification Report ---")
 report = classification_report(y_test, y_pred, target_names=target_names, zero_division=0)
 print(report)
 
-# --- 9. 交叉验证 ---
 cv_scores = cross_val_score(nb_model, X_pca_combined, y, cv=5, scoring='accuracy')
-print(f"\n--- 5折交叉验证 ---")
-print(f"平均准确率: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+print(f"\n--- 5-fold cross-validation ---")
+print(f"Average Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
 
-# --- 10. 性能对比（原始 vs PCA）---
 X_full_original = np.hstack([X_group1_scaled, X_group2_scaled])
 X_train_orig, X_test_orig, y_train_orig, y_test_orig = train_test_split(
     X_full_original, y, test_size=0.3, stratify=y, random_state=42
@@ -186,9 +172,7 @@ nb_orig = GaussianNB()
 nb_orig.fit(X_train_orig, y_train_orig)
 orig_test_acc = nb_orig.score(X_test_orig, y_test_orig)
 
-print(f"\n--- 性能对比 ---")
-print(f"原始特征空间测试准确率: {orig_test_acc:.4f}")
-print(f"PCA空间测试准确率: {test_acc:.4f}")
-print(f"特征维度: 原始 {X_full_original.shape[1]} → PCA {X_pca_combined.shape[1]}")
-
-print("\n✅ 分析完成！所有图已保存为 PDF。")
+print(f"\n--- Performance Comparison ---")
+print(f"Test Accuracy in Original Feature Space: {orig_test_acc:.4f}")
+print(f"Test Accuracy in PCA Space: {test_acc:.4f}")
+print(f"Feature Dimensionality: Original {X_full_original.shape[1]} → PCA {X_pca_combined.shape[1]}")
